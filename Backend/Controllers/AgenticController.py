@@ -1,8 +1,13 @@
 from langchain.tools import tool
 from typing import Literal
 import chromadb
+import os
+from pathlib import Path
 from Controllers.RetreivalController import KeywordSearch_TFIDF, KeywordSearch_BM25, SemanticSearch
-DB_PATH = r"C:\Users\aliai\Desktop\M2 I2A\RAG Salah Bouchama\Collections"
+DB_PATH = os.getenv(
+    "CHROMA_DB_PATH",
+    str(Path(__file__).resolve().parents[2] / "Collections"),
+)
 
 client = chromadb.PersistentClient(path=str(DB_PATH))
 #prestation

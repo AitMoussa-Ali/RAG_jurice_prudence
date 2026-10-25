@@ -5,13 +5,18 @@ import chromadb
 from transformers import BertTokenizer
 from collections import defaultdict
 from typing import Literal
+import os
+from pathlib import Path
 from Backend.Common.llm import get_llm
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 import json
 from Backend.Controllers.DiscussionController import load_discussions, save_discussions
 from Backend.Prompts.Prompt import in_case_search_prompt, search_case_prompt, build_search_case_prompt, build_retreive_prompt
 tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
-DB_PATH = r"C:\Users\aliai\Desktop\M2 I2A\RAG Salah Bouchama\Collections"
+DB_PATH = os.getenv(
+    "CHROMA_DB_PATH",
+    str(Path(__file__).resolve().parents[2] / "Collections"),
+)
 
 def Choose_method(query: str, method : Literal["BM_25", "TFIDF", "Semantic", "Hybrid"]):
     client = chromadb.PersistentClient(path=DB_PATH)
@@ -543,5 +548,4 @@ def retreive(
         "answer": answer,
         "evidence": evidence,
     }
-
 

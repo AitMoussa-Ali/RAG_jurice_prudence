@@ -143,5 +143,42 @@
         "content": "Comme indiqué précédemment, les documents fournis ne contiennent pas le texte intégral de l'article 18 du code civil.\n\nToutefois, d'après les motifs de la décision, on peut déduire que cet article porte sur la **nationalité française par filiation**. Dans cette affaire, M. [I] [O] s'est appuyé sur cet article pour revendiquer la nationalité française en raison de sa filiation maternelle."
       }
     ]
+  },
+  "d23c7aad-0279-4c28-bad6-c9c6c869fc62": {
+    "selected_case": {
+      "chunk_id": "658096ef3ea7c8c1120de502_chunk_26",
+      "collection_name": "tribunal_judiciaire",
+      "affaire": "22/06955",
+      "nom de l'affaire": "Action déclaratoire de nationalité française et contestation d'un refus d'enregistrement de déclaration de nationalité sur le fondement de l'article 21-14 du code civil",
+      "localisation": "Paris",
+      "juridication": "tribunal judiciaire",
+      "source_id": "658096ef3ea7c8c1120de502"
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "résume moi l'affaire en me donnant une réponse structuré, elle doit contenir les articles qui ont été apliqué, mais aussi la décision du juge"
+      },
+      {
+        "role": "assistant",
+        "content": "Voici un résumé structuré de l'affaire **22/06955** basée sur les éléments fournis :\n\n### 1. Présentation de l'affaire\nM. [I] [O] a engagé une action devant le Tribunal judiciaire de Paris pour deux motifs principaux :\n*   **Une action déclaratoire de nationalité française** sur le fondement de l'article 18 du code civil (pour être reconnu comme français).\n*   **Une contestation d'un refus d'enregistrement de déclaration de nationalité** sur le fondement de l'article 21-14 du code civil.\n\nCette action fait suite à un refus de délivrance d'un certificat de nationalité française (CNF) notifié le 31 juillet 2017, au motif que le demandeur était irrecevable à prouver sa nationalité par filiation en application de l'article 30-3 du code civil.\n\n### 2. Arguments des parties\n*   **Le demandeur (M. [I] [O]) :** Revendique la nationalité française par filiation et sollicite l'enregistrement de sa déclaration de nationalité.\n*   **Le ministère public :** S'oppose aux demandes. Il estime que M. [I] [O] ne rapporte pas la preuve de sa nationalité française et, par conséquent, ne peut prétendre au bénéfice de l'article 21-14 du code civil. Il soutient également que le simple maintien de liens familiaux avec des personnes françaises ou résidant en France ne constitue pas des « liens manifestes » avec la France.\n\n### 3. Cadre juridique appliqué (Articles cités)\nLe tribunal s'est appuyé sur les dispositions suivantes :\n\n*   **Code de procédure civile :**\n    *   **Article 1043 :** Relatif à l'obligation de déposer une copie de l'assignation au ministère de la Justice pour les contestations de nationalité.\n    *   **Articles 455 et 768 :** Dispositions procédurales générales.\n\n*   **Code civil :**\n    *   **Article 30 alinéa 1 :** Établit que la charge de la preuve de la nationalité incombe à celui qui la revendique s'il ne possède pas de certificat de nationalité.\n    *   **Article 32-1 :** Concerne le maintien de la nationalité française pour les Français de statut civil de droit commun domiciliés en Algérie à la date du scrutin d'autodétermination.\n    *   **Article 21-14 :** Permet aux personnes ayant perdu la nationalité française (via l'article 23-6 ou 30-3) de la réclamer par déclaration, à condition d'avoir conservé ou acquis des liens manifestes (culturels, professionnels, économiques ou familiaux) ou d'avoir servi dans l'armée française.\n    *   **Article 47 et 20-1 :** Relatifs aux preuves par actes d'état civil et à l'établissement de la filiation pendant la minorité.\n\n### 4. Décision du juge\nL'extrait fourni contient les motifs et le rappel du droit, mais **ne mentionne pas le dispositif final (le verdict)**. \n\nToutefois, sur la forme, le juge a déclaré que **la procédure était régulière** au regard de l'article 1043 du code de procédure civile, puisque le récépissé du ministère de la justice avait été délivré le 14 novembre 2022. Sur le fond, le tribunal a rappelé que M. [I] [O], ne possédant pas de certificat de nationalité, devait rapporter la preuve de la nationalité française du parent dont il revendique la filiation."
+      },
+      {
+        "role": "user",
+        "content": "Parfait merci"
+      },
+      {
+        "role": "assistant",
+        "content": "Je vous en prie ! N'hésitez pas si vous avez d'autres questions sur ce dossier ou sur un autre point de jurisprudence. Bonne continuation !"
+      },
+      {
+        "role": "user",
+        "content": "tu peux me chercher d'autres affaires ?"
+      },
+      {
+        "role": "assistant",
+        "content": "En tant qu'assistant spécialisé, je n'ai pas accès à une base de données globale de jurisprudence en temps réel pour effectuer des recherches autonomes sur le web ou dans d'autres archives.\n\n**Je ne peux travailler que sur les documents qui me sont fournis dans le contexte de la conversation.**\n\nSi vous avez d'autres dossiers, des extraits de jugements ou des fichiers de jurisprudence, vous pouvez me les transmettre. Je serai alors ravi de :\n1.  Les analyser pour vous.\n2.  En faire des résumés structurés.\n3.  Comparer les décisions entre plusieurs affaires si vous m'en donnez plusieurs.\n\nAvez-vous d'autres documents à me soumettre ?"
+      }
+    ]
   }
 }

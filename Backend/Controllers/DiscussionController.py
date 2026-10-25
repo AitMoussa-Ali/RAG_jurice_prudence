@@ -1,8 +1,12 @@
 from pathlib import Path
 import json
+import os
 from typing import Literal
 MEMORY_PATH = Path(
-    r"C:\Users\aliai\Desktop\M2 I2A\RAG Salah Bouchama\Backend\Discussions\discussions.json"
+    os.getenv(
+        "DISCUSSIONS_PATH",
+        str(Path(__file__).resolve().parents[1] / "Discussions" / "discussions.json"),
+    )
 )
 
 def load_discussions() -> dict:
