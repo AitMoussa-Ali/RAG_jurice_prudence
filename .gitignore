@@ -1,2 +1,4 @@
 .env
 venv
+Frontend/node_modules
+Collections

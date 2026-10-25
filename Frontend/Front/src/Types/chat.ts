@@ -23,6 +23,19 @@ export interface CaseItem {
   location?: string;
   /** Jurisdiction (cour d'appel, tribunal judiciaire, cour de cassation). */
   jurisdiction?: string;
+  /** Chroma collection holding the matched chunk (needed by /discuss). */
+  collection_name?: string;
+
+  source_id?: string;
+
+  affaire?: string
+}
+
+/** A passage the backend used to ground a discussion answer. */
+export interface EvidenceItem {
+  id: string;
+  excerpt: string;
+  metadata?: Record<string, unknown>;
 }
 
 export type MessageSender = "user" | "assistant";
@@ -35,6 +48,8 @@ export interface Message {
   cases?: CaseItem[];
   /** True when the message reports a failure (rendered with error styling). */
   isError?: boolean;
+  /** Passages that support an answer about the selected case. */
+  evidence?: EvidenceItem[];
   /** ISO 8601 timestamp. */
   timestamp: string;
 }
@@ -56,3 +71,26 @@ export const SEARCH_METHODS: ReadonlyArray<{
   { value: "BM_25", label: "BM25", hint: "Mots-clés pondérés" },
   { value: "TFIDF", label: "TF-IDF", hint: "Mots-clés, fréquence" },
 ];
+
+/* ------------------------------ Discussion -------------------------------- */
+
+export interface ChatHistoryEntry {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/** Payload sent to POST /api/retrieval/discuss (JSON). */
+export interface DiscussRequest {
+  /** Selected case; the backend requires `chunk_id` and `collection_name`. */
+  search: Record<string, unknown>;
+  /** Initial history, only used when the conversation is created. */
+  discussion: ChatHistoryEntry[];
+  query: string;
+  conversation_id: string;
+  method: SearchMethod;
+}
+
+export interface DiscussResult {
+  answer: string;
+  evidence: EvidenceItem[];
+}

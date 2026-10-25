@@ -41,7 +41,7 @@ async def get_data(
 
         data = pd.DataFrame(rows)
 
-        return data[["id","themes","text"]]
+        return data[["id","themes","text", "location", "numbers"]]
 
     except requests.RequestException as e:
         print(f"Erreur lors de la requête HTTP : {e}")

@@ -1,28 +1,14 @@
+import axios from "axios";
+import {request} from "./axios";
 import type {
   CaseItem,
+  DiscussRequest,
+  DiscussResult,
+  EvidenceItem,
   SearchMethod,
   SearchRequest,
   SearchResult,
 } from "../Types/chat";
-
-/* -------------------------------------------------------------------------- */
-/* Configuration                                                              */
-/* -------------------------------------------------------------------------- */
-
-const DEFAULT_API_URL = "http://localhost:8000";
-
-/** Vite: VITE_API_BASE_URL. Falls back to localhost for local development. */
-export const API_BASE_URL: string = (
-  (typeof import.meta !== "undefined" &&
-    (import.meta as unknown as { env?: Record<string, string | undefined> }).env
-      ?.VITE_API_BASE_URL) ||
-  DEFAULT_API_URL
-).replace(/\/+$/, "");
-
-const SEARCH_ENDPOINT = "/api/retrieval/search";
-
-/** The backend calls an LLM after retrieval, so allow a generous timeout. */
-const REQUEST_TIMEOUT_MS = 120_000;
 
 /* -------------------------------------------------------------------------- */
 /* Errors                                                                     */
@@ -42,24 +28,18 @@ export class ApiError extends Error {
   }
 }
 
-/** Extracts a human-readable message from a FastAPI error body. */
-async function readErrorDetail(response: Response): Promise<string | undefined> {
-  try {
-    const data: unknown = await response.json();
-    if (data && typeof data === "object" && "detail" in data) {
-      const detail = (data as { detail: unknown }).detail;
-      if (typeof detail === "string") return detail;
-      // FastAPI/Pydantic validation errors: [{ loc, msg, type }, ...]
-      if (Array.isArray(detail)) {
-        return detail
-          .map((d) =>
-            d && typeof d === "object" && "msg" in d ? String((d as { msg: unknown }).msg) : String(d),
-          )
-          .join(" ; ");
-      }
+/** Extracts a readable message from a FastAPI error body ({ detail: string | [{ msg }] }). */
+function readErrorDetail(data: unknown): string | undefined {
+  if (data && typeof data === "object" && "detail" in data) {
+    const detail = (data as { detail: unknown }).detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      return detail
+        .map((d) =>
+          d && typeof d === "object" && "msg" in d ? String((d as { msg: unknown }).msg) : String(d),
+        )
+        .join(" ; ");
     }
-  } catch {
-    /* body was not JSON */
   }
   return undefined;
 }
@@ -88,7 +68,6 @@ const asNumber = (v: unknown): number | null => {
   return null;
 };
 
-/** First non-empty string among several candidate keys (the LLM output keys vary). */
 const pick = (obj: UnknownRecord, keys: string[]): string | undefined => {
   for (const key of keys) {
     const value = asString(obj[key]);
@@ -97,7 +76,7 @@ const pick = (obj: UnknownRecord, keys: string[]): string | undefined => {
   return undefined;
 };
 
-/** Removes ```json fences and parses a string payload; returns the raw string if it is not JSON. */
+/** Strips ```json fences and parses string payloads; returns the input unchanged if not JSON. */
 function parseMaybeJson(value: unknown): unknown {
   if (typeof value !== "string") return value;
   const cleaned = value
@@ -123,47 +102,39 @@ function toCaseItem(raw: UnknownRecord, index: number): CaseItem | null {
     "résumé",
     "description",
   ]);
-
   if (!title && !summary) return null;
 
-  const location = pick(raw, ["localisation", "location", "ville"]);
-  const jurisdiction = pick(raw, ["juridication", "juridiction", "jurisdiction"]);
-  const explicitId = pick(raw, ["id", "case_id"]);
-
   return {
-    id: explicitId ?? `case-${index}-${(title ?? summary ?? "").slice(0, 40)}`,
+    id: pick(raw, ["chunk_id", "id", "case_id"]) ?? `case-${index}-${(title ?? summary ?? "").slice(0, 40)}`,
     title: title ?? summary ?? "Affaire sans titre",
     summary: summary ?? "",
     relevance_score: asNumber(raw.score ?? raw.relevance_score),
     content: pick(raw, ["content", "documents", "document", "text"]),
-    location,
-    jurisdiction,
+    location: pick(raw, ["localisation", "location", "ville"]),
+    jurisdiction: pick(raw, ["juridication", "juridiction", "jurisdiction"]),
+    collection_name: pick(raw, ["collection_name", "collection"]),
+    source_id: pick(raw, ["source_id"])
   };
 }
 
 /**
- * Accepts every shape the endpoint may produce:
- *  - a JSON string (optionally wrapped in a Markdown fence)
- *  - a single case object
- *  - an array of case objects
- *  - an envelope such as { cases: [...] } / { results: [...] }
- *  - { message } when nothing was found
- *  - { error, raw_content } when the LLM returned invalid JSON
+ * Handles every shape the endpoint may return: JSON string (fenced or not),
+ * single case object, array of cases, { cases | results | affaires: [...] },
+ * { message }, or { error, raw_content }.
  */
 export function normalizeSearchResponse(payload: unknown): SearchResult {
   const data = parseMaybeJson(payload);
 
-  if (typeof data === "string") {
-    return { cases: [], message: data };
-  }
+  if (typeof data === "string") return { cases: [], message: data };
 
   if (Array.isArray(data)) {
     const cases = data
-      .map((item, i) => (isRecord(parseMaybeJson(item)) ? toCaseItem(parseMaybeJson(item) as UnknownRecord, i) : null))
+      .map((item, i) => {
+        const parsed = parseMaybeJson(item);
+        return isRecord(parsed) ? toCaseItem(parsed, i) : null;
+      })
       .filter((c): c is CaseItem => c !== null);
-    return cases.length
-      ? { cases }
-      : { cases: [], message: "Pas d'affaire trouvée." };
+    return cases.length ? { cases } : { cases: [], message: "Pas d'affaire trouvée." };
   }
 
   if (isRecord(data)) {
@@ -173,97 +144,186 @@ export function normalizeSearchResponse(payload: unknown): SearchResult {
 
     if (typeof data.error === "string") {
       const raw = asString(data.raw_content);
-      // The LLM answered, just not in JSON: surface its text rather than failing.
-      return raw
-        ? { cases: [], message: raw }
-        : { cases: [], message: "La réponse du serveur n'a pas pu être interprétée." };
+      return {
+        cases: [],
+        message: raw ?? "La réponse du serveur n'a pas pu être interprétée.",
+      };
     }
 
     const single = toCaseItem(data, 0);
     if (single) return { cases: [single] };
 
-    const message = asString(data.message);
-    return { cases: [], message: message ?? "Pas d'affaire trouvée." };
+    return { cases: [], message: asString(data.message) ?? "Pas d'affaire trouvée." };
   }
 
   return { cases: [], message: "Pas d'affaire trouvée." };
 }
 
 /* -------------------------------------------------------------------------- */
-/* Public API                                                                 */
+/* Shared error mapping                                                       */
 /* -------------------------------------------------------------------------- */
 
-export async function searchCases(
-  request: string,
-  method: SearchMethod,
-  signal?: AbortSignal,
-): Promise<SearchResult> {
-  const body: SearchRequest = { request: request.trim(), method };
+/** The backend calls an LLM, so allow a generous timeout. */
+const REQUEST_TIMEOUT_MS = 120_000;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort("timeout"), REQUEST_TIMEOUT_MS);
-  // Forward an external abort (e.g. component unmount) to our controller.
-  const onExternalAbort = () => controller.abort("cancelled");
-  signal?.addEventListener("abort", onExternalAbort, { once: true });
+function toApiError(err: unknown): ApiError {
+  if (err instanceof ApiError) return err;
 
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE_URL}${SEARCH_ENDPOINT}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    if (controller.signal.aborted && controller.signal.reason === "timeout") {
-      throw new ApiError(
+  if (axios.isCancel(err)) {
+    return new ApiError("Requête annulée.", "unknown");
+  }
+
+  if (axios.isAxiosError(err)) {
+    const status = err.response?.status;
+    const detail = readErrorDetail(err.response?.data);
+
+    if (status === 422) {
+      return new ApiError(
+        detail ?? "Requête invalide : vérifiez les champs envoyés.",
+        "validation",
+        status,
+      );
+    }
+    if (status !== undefined && status >= 500) {
+      return new ApiError(
+        detail ?? "Une erreur est survenue côté serveur pendant la recherche juridique.",
+        "server",
+        status,
+      );
+    }
+    if (status !== undefined) {
+      return new ApiError(detail ?? `Erreur inattendue (HTTP ${status}).`, "unknown", status);
+    }
+    if (err.code === "ECONNABORTED" || err.code === "ETIMEDOUT") {
+      return new ApiError(
         "Le serveur met trop de temps à répondre. Réessayez dans un instant.",
         "timeout",
       );
     }
-    if (controller.signal.aborted) {
-      throw new ApiError("Requête annulée.", "unknown");
-    }
-    throw new ApiError(
-      `Impossible de joindre le serveur (${API_BASE_URL}). Vérifiez que l'API est démarrée et que CORS est autorisé.`,
+    return new ApiError(
+      "Impossible de joindre le serveur. Vérifiez que l'API est démarrée et que CORS est autorisé.",
       "network",
     );
-  } finally {
-    clearTimeout(timeout);
-    signal?.removeEventListener("abort", onExternalAbort);
   }
 
-  if (!response.ok) {
-    const detail = await readErrorDetail(response);
-    if (response.status === 422) {
-      throw new ApiError(
-        detail ?? "Requête invalide : la question et la méthode sont obligatoires.",
-        "validation",
-        422,
-      );
+  return new ApiError("Une erreur inattendue est survenue.", "unknown");
+}
+
+/* -------------------------------------------------------------------------- */
+/* Search call                                                                */
+/* -------------------------------------------------------------------------- */
+
+export async function searchCases(
+  query: string,
+  method: SearchMethod,
+  signal?: AbortSignal,
+): Promise<SearchResult> {
+  const payload: SearchRequest = { request: query.trim(), method };
+
+  // /search declares `request` and `method` as Form(...) fields: send them
+  // form-encoded (axios sets the Content-Type for URLSearchParams).
+  const form = new URLSearchParams();
+  form.append("request", payload.request);
+  form.append("method", payload.method);
+
+  try {
+    const { data } = await request.post<unknown>("retrieval/search", form, {
+      signal,
+      timeout: REQUEST_TIMEOUT_MS,
+    });
+    console.log(data);
+    
+    return normalizeSearchResponse(data);
+  } catch (err) {
+    throw toApiError(err);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Discussion call                                                            */
+/* -------------------------------------------------------------------------- */
+
+function toEvidenceItem(raw: unknown, index: number): EvidenceItem | null {
+  if (!isRecord(raw)) return null;
+  const excerpt = pick(raw, ["documents", "document", "content", "text"]);
+  if (!excerpt) return null;
+  const meta = raw.metadatas ?? raw.metadata;
+  return {
+    id: pick(raw, ["id", "chunk_id"]) ?? `evidence-${index}`,
+    excerpt,
+    metadata: isRecord(meta) ? meta : undefined,
+  };
+}
+
+/** Handles { answer, evidence }, { message } and plain / JSON-string payloads. */
+export function normalizeDiscussResponse(payload: unknown): DiscussResult {
+  const data = parseMaybeJson(payload);
+
+  if (typeof data === "string") return { answer: data, evidence: [] };
+
+  if (isRecord(data)) {
+    const answer = asString(data.answer) ?? asString(data.message);
+    if (answer) {
+      const evidence = Array.isArray(data.evidence)
+        ? data.evidence
+            .map((e, i) => toEvidenceItem(e, i))
+            .filter((e): e is EvidenceItem => e !== null)
+        : [];
+      return { answer, evidence };
     }
-    if (response.status >= 500) {
-      throw new ApiError(
-        detail ?? "Une erreur est survenue côté serveur pendant la recherche juridique.",
-        "server",
-        response.status,
-      );
-    }
+  }
+
+  return { answer: "La réponse du serveur n'a pas pu être interprétée.", evidence: [] };
+}
+
+export interface DiscussParams {
+  query: string;
+  method: SearchMethod;
+  /** One id per selected case: the backend refuses to mix cases in a conversation. */
+  conversationId: string;
+  selectedCase: CaseItem;
+}
+
+export async function discussCase(
+  { query, method, conversationId, selectedCase }: DiscussParams,
+  signal?: AbortSignal,
+): Promise<DiscussResult> {
+  if (!selectedCase.collection_name) {
     throw new ApiError(
-      detail ?? `Erreur inattendue (HTTP ${response.status}).`,
-      "unknown",
-      response.status,
+      "L'affaire retenue n'a pas d'identifiant de passage (chunk_id / collection_name) : " +
+        "la recherche doit les renvoyer pour pouvoir discuter de cette affaire.",
+      "validation",
     );
   }
 
-  // The endpoint may return JSON (object / array / string) or plain text.
-  const text = await response.text();
-  let payload: unknown = text;
-  try {
-    payload = JSON.parse(text);
-  } catch {
-    /* keep raw text; normalizeSearchResponse will handle it */
-  }
+  // `selected_case` is stored by the backend and injected in the LLM prompt,
+  // so include the descriptive fields next to the two required identifiers.
+  const body: DiscussRequest = {
+    search: {
+      chunk_id: selectedCase.id,
+      collection_name: selectedCase.collection_name,
+      affaire: selectedCase.title,
+      "nom de l'affaire": selectedCase.summary || undefined,
+      localisation: selectedCase.location,
+      juridication: selectedCase.jurisdiction,
+      source_id: selectedCase.source_id,
+    },
+    discussion: [], // history lives server-side, keyed by conversation_id
+    query: query.trim(),
+    conversation_id: conversationId,
+    method,
+  };
 
-  return normalizeSearchResponse(payload);
+  try {
+    console.log(body);
+    
+    // JSON body: `search` is a nested object and cannot travel as a form field.
+    const { data } = await request.post<unknown>("retrieval/discuss", body, {
+      signal,
+      timeout: REQUEST_TIMEOUT_MS,
+    });
+    return normalizeDiscussResponse(data);
+  } catch (err) {
+    throw toApiError(err);
+  }
 }

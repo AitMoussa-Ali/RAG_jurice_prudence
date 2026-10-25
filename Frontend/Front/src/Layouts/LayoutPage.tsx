@@ -6,7 +6,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { ApiError, searchCases } from "../Services/Api";
+import { ApiError, discussCase, searchCases } from "../Services/api";
 import {
   SEARCH_METHODS,
   type CaseItem,
@@ -32,7 +32,7 @@ const formatScore = (score: number | null): string | null =>
 const WELCOME_MESSAGE: Message = {
   id: "welcome",
   sender: "assistant",
-  text: "Décrivez le sujet ou les faits qui vous intéressent. Je recherche les affaires correspondantes dans les cours d'appel, tribunaux judiciaires et la Cour de cassation.",
+  text: "Décrivez le sujet ou les faits qui vous intéressent. Je recherche les affaires correspondantes dans les cours d'appel, tribunaux judiciaires et la Cour de cassation. Une fois une affaire retenue, vous pourrez m'interroger à son sujet.",
   timestamp: new Date().toISOString(),
 };
 
@@ -261,6 +261,24 @@ function MessageBubble({ message, selectedId, onSelectCase }: MessageBubbleProps
           {message.text}
         </div>
 
+        {!!message.evidence?.length && (
+          <details className="group mt-2 w-fit max-w-full rounded-lg border border-slate-200 bg-white text-sm text-slate-600">
+            <summary className="cursor-pointer select-none rounded-lg px-3 py-1.5 font-medium text-slate-700 transition-colors hover:text-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
+              Sources ({message.evidence.length})
+            </summary>
+            <ul className="max-h-64 space-y-3 overflow-y-auto border-t border-slate-100 p-3">
+              {message.evidence.map((item) => (
+                <li key={item.id}>
+                  <p className="break-all text-xs text-slate-400">{item.id}</p>
+                  <p className="mt-0.5 line-clamp-5 whitespace-pre-wrap break-words leading-relaxed">
+                    {item.excerpt}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+
         {hasCases && (
           <CaseSelector
             cases={message.cases!}
@@ -360,13 +378,22 @@ function ErrorBanner({ message, onDismiss, onRetry }: ErrorBannerProps) {
 /* -------------------------------------------------------------------------- */
 
 interface ChatInputProps {
+  placeholder: string;
+  hint: string;
   method: SearchMethod;
   onMethodChange: (method: SearchMethod) => void;
   onSubmit: (text: string) => void;
   disabled: boolean;
 }
 
-function ChatInput({ method, onMethodChange, onSubmit, disabled }: ChatInputProps) {
+function ChatInput({
+  placeholder,
+  hint,
+  method,
+  onMethodChange,
+  onSubmit,
+  disabled,
+}: ChatInputProps) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -408,7 +435,7 @@ function ChatInput({ method, onMethodChange, onSubmit, disabled }: ChatInputProp
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ex. licenciement abusif, clause de non-concurrence…"
+            placeholder={placeholder}
             className="max-h-40 min-h-[40px] w-full flex-1 resize-none bg-transparent px-2 py-2 text-[15px] text-slate-900 placeholder:text-slate-400 focus:outline-none"
           />
 
@@ -448,9 +475,7 @@ function ChatInput({ method, onMethodChange, onSubmit, disabled }: ChatInputProp
             </button>
           </div>
         </div>
-        <p className="mt-1.5 hidden px-2 text-xs text-slate-400 sm:block">
-          Entrée pour envoyer, Maj + Entrée pour un retour à la ligne.
-        </p>
+        <p className="mt-1.5 px-2 text-xs text-slate-400">{hint}</p>
       </div>
     </div>
   );
@@ -460,21 +485,32 @@ function ChatInput({ method, onMethodChange, onSubmit, disabled }: ChatInputProp
 /* LayoutPage (parent)                                                        */
 /* -------------------------------------------------------------------------- */
 
+/** A request waiting to run, kept so the error banner can retry it. */
+interface PendingRequest {
+  text: string;
+  method: SearchMethod;
+  /** Set when the question is about a retained case (discussion mode). */
+  selected: CaseItem | null;
+  conversationId: string | null;
+}
+
 export default function LayoutPage() {
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [searchMethod, setSearchMethod] = useState<SearchMethod>("Hybrid");
   const [loading, setLoading] = useState(false);
   const [selectedCase, setSelectedCase] = useState<CaseItem | null>(null);
+  /** One conversation per retained case: the backend refuses to mix cases. */
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
-  const lastRequestRef = useRef<{ text: string; method: SearchMethod } | null>(null);
+  const lastRequestRef = useRef<PendingRequest | null>(null);
 
   // Cancel any in-flight request when the page unmounts.
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const runSearch = useCallback(async (text: string, method: SearchMethod) => {
-    lastRequestRef.current = { text, method };
+  const runRequest = useCallback(async (req: PendingRequest) => {
+    lastRequestRef.current = req;
     setError(null);
     setLoading(true);
 
@@ -483,19 +519,42 @@ export default function LayoutPage() {
     abortRef.current = controller;
 
     try {
-      const result = await searchCases(text, method, controller.signal);
+      let reply: Message;
 
-      const reply: Message = {
-        id: makeId(),
-        sender: "assistant",
-        text: result.cases.length
-          ? result.cases.length === 1
-            ? "J'ai trouvé une affaire correspondant à votre recherche. Sélectionnez-la pour la retenir."
-            : `J'ai trouvé ${result.cases.length} affaires correspondant à votre recherche. Sélectionnez celle qui vous intéresse.`
-          : (result.message ?? "Pas d'affaire trouvée."),
-        cases: result.cases.length ? result.cases : undefined,
-        timestamp: new Date().toISOString(),
-      };
+      if (req.selected && req.conversationId) {
+        // A case is retained: ask the question about it (/discuss).
+        const result = await discussCase(
+          {
+            query: req.text,
+            method: req.method,
+            conversationId: req.conversationId,
+            selectedCase: req.selected,
+          },
+          controller.signal,
+        );
+        reply = {
+          id: makeId(),
+          sender: "assistant",
+          text: result.answer,
+          evidence: result.evidence.length ? result.evidence : undefined,
+          timestamp: new Date().toISOString(),
+        };
+      } else {
+        // No case yet: search for cases (/search).
+        const result = await searchCases(req.text, req.method, controller.signal);
+        reply = {
+          id: makeId(),
+          sender: "assistant",
+          text: result.cases.length
+            ? result.cases.length === 1
+              ? "J'ai trouvé une affaire correspondant à votre recherche. Sélectionnez-la pour la retenir."
+              : `J'ai trouvé ${result.cases.length} affaires correspondant à votre recherche. Sélectionnez celle qui vous intéresse.`
+            : (result.message ?? "Pas d'affaire trouvée."),
+          cases: result.cases.length ? result.cases : undefined,
+          timestamp: new Date().toISOString(),
+        };
+      }
+
       setMessages((prev) => [...prev, reply]);
     } catch (err) {
       if (controller.signal.aborted) return;
@@ -521,23 +580,46 @@ export default function LayoutPage() {
         timestamp: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, userMessage]);
-      void runSearch(text, searchMethod);
+      void runRequest({ text, method: searchMethod, selected: selectedCase, conversationId });
     },
-    [runSearch, searchMethod],
+    [runRequest, searchMethod, selectedCase, conversationId],
   );
 
   const handleRetry = useCallback(() => {
     const last = lastRequestRef.current;
-    if (last && !loading) void runSearch(last.text, last.method);
-  }, [loading, runSearch]);
+    if (last && !loading) void runRequest(last);
+  }, [loading, runRequest]);
 
-  const handleSelectCase = useCallback((item: CaseItem) => {
-    setSelectedCase((current) => (current?.id === item.id ? null : item));
+  const handleSelectCase = useCallback(
+    (item: CaseItem) => {
+      if (selectedCase?.id === item.id) {
+        setSelectedCase(null);
+        setConversationId(null);
+        return;
+      }
+      setSelectedCase(item);
+      setConversationId(makeId()); // fresh conversation for the newly retained case
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId(),
+          sender: "assistant",
+          text: `Affaire retenue : « ${item.title} ». Posez vos questions à son sujet.`,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    },
+    [selectedCase],
+  );
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedCase(null);
+    setConversationId(null);
   }, []);
 
   return (
     <div className="flex h-dvh flex-col bg-slate-50 text-slate-900 antialiased">
-      <Header selectedCase={selectedCase} onClearSelection={() => setSelectedCase(null)} />
+      <Header selectedCase={selectedCase} onClearSelection={handleClearSelection} />
 
       <MessageList
         messages={messages}
@@ -555,6 +637,16 @@ export default function LayoutPage() {
       )}
 
       <ChatInput
+        placeholder={
+          selectedCase
+            ? "Posez une question sur cette affaire…"
+            : "Ex. licenciement abusif, clause de non-concurrence…"
+        }
+        hint={
+          selectedCase
+            ? "Vos questions portent sur l'affaire retenue. Retirez-la (croix en haut) pour lancer une nouvelle recherche."
+            : "Entrée pour envoyer, Maj + Entrée pour un retour à la ligne."
+        }
         method={searchMethod}
         onMethodChange={setSearchMethod}
         onSubmit={handleSend}
