@@ -324,18 +324,3 @@ Pour résoudre ce problème :
 
 Tu peux également utiliser une image construite et partagée depuis une machine disposant déjà de la base de données.
 
-### Le point de terminaison `/health` fonctionne, mais la recherche échoue
-
-Le point de terminaison `/health` peut renvoyer un état positif même si le service LLM n’est pas configuré.
-
-Vérifie donc séparément la configuration du LLM, la disponibilité du modèle et les journaux de l’application.
-
-## 5. Points importants avant le partage
-
-- **Droits de redistribution :** l’image contient la base de données des décisions de justice. Vérifie que les conditions de licence et les droits applicables autorisent la redistribution de ces données avant de partager l’image ou de la publier sur Docker Hub.
-- **Confidentialité :** ne stocke pas de clés API réelles dans l’image et ne partage pas ton fichier `.env`.
-- **Données persistantes :** les volumes Docker conservent les données entre les recréations du conteneur. Une mise à jour de l’image ne remplace pas nécessairement une base de données déjà présente dans un volume.
-- **Service LLM externe :** chaque utilisateur doit disposer d’un service LLM accessible et d’identifiants valides pour utiliser les fonctionnalités de recherche et de discussion.
-- **État de santé :** une réponse positive de `/health` confirme que le point de terminaison répond, mais ne garantit pas que toutes les fonctionnalités de l’application sont opérationnelles.
-- **Taille de l’image :** l’image inclut la base de données, les dépendances et les modèles nécessaires au fonctionnement de l’application. Prévois suffisamment d’espace disque pour la construire, la stocker et la partager.
-
